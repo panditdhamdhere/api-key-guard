@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# pre-commit: block commits that add things that look like secrets.
+# Checks ONLY the lines you are about to commit. (Tech with Pandit)
+Q="[\"']"   # a quote character
+RULES=(
+  "OpenAI-style key|sk-[A-Za-z0-9_-]{20,}"
+  "AWS access key id|AKIA[0-9A-Z]{16}"
+  "hard-coded secret|(password|secret|api_key|token)[^=:]{0,20}[=:] *$Q[^\"' ]{6,}"
+)
+hit=0; file=""; line=0; shopt -s nocasematch
+while IFS= read -r l; do
+  case "$l" in
+    "+++ b/"*) file="${l#+++ b/}" ;;
+    "@@"*) n="${l#*+}"; line="${n%%[, ]*}" ;;
+    "+"*) for r in "${RULES[@]}"; do
+            if [[ "${l:1}" =~ ${r#*|} ]]; then
+              echo "  BLOCKED  $file:$line  ${r%%|*}"; hit=1; break
+            fi
+          done; line=$((line+1)) ;;
+  esac
+done < <(git diff --cached -U0 --no-color --diff-filter=ACM)
+if [ $hit -eq 1 ]; then
+  echo "pre-commit: possible secret in staged changes. Commit cancelled."
+  echo "Move it to .env (listed in .gitignore). If it was pushed, revoke it."
+  exit 1
+fi
